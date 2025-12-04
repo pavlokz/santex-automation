@@ -1,3 +1,8 @@
+import sys
+import pathlib
+ROOT = pathlib.Path(__file__).parent.resolve()
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 import os
 import pytest
 import allure
