@@ -8,7 +8,18 @@ class ProductsPage(BasePage):
     CART_BADGE = ".shopping_cart_badge"
     BURGER_BUTTON = "#react-burger-menu-btn"
     LOGOUT_LINK = "#logout_sidebar_link"
-    SORT_SELECT = "select[data-test='product_sort_container']"
+
+    # posibles selectores para el control de ordenamiento (underscore / hyphen / clase)
+    SORT_SELECT_CANDIDATES = [
+        "select[data-test='product_sort_container']",
+        "select[data-test='product-sort-container']",
+        "select.product_sort_container",
+        "select.product-sort-container",
+        "select[class*='product_sort']",
+        "select[class*='product-sort']",
+        "[data-test='product_sort_container']",
+        "[data-test='product-sort-container']",
+    ]
 
     # Mapping label -> value (SauceDemo known values)
     SORT_LABEL_TO_VALUE = {
@@ -52,29 +63,99 @@ class ProductsPage(BasePage):
         self.open_menu()
         self.page.click(self.LOGOUT_LINK)
 
+    def _find_sort_locator(self, timeout: int = 5000):
+        """
+        Try multiple candidate selectors and return the first locator that exists.
+        Returns (selector_str, locator) or (None, None)
+        """
+        for sel in self.SORT_SELECT_CANDIDATES:
+            try:
+                loc = self.page.locator(sel).first
+                # use a short wait to see if exists in DOM (visible not required here)
+                if loc.count() > 0:
+                    return sel, loc
+            except Exception:
+                continue
+        return None, None
+
     def sort_by(self, option_text: str, timeout: int = 10000):
         """
         Sort products by a visible option label (e.g. "Price (low to high)").
-        Fallback: if selecting by label times out or is not available, try selecting by known value mapping.
+        Robust: tries multiple selectors, fallback to value mapping, and gives diagnostic info on failure.
         """
-        locator = self.page.locator(self.SORT_SELECT)
+        # ensure page loaded minimally
         try:
-            locator.wait_for(state="visible", timeout=timeout)
+            self.page.wait_for_selector(self.PRODUCTS_CONTAINER, state="visible", timeout=5000)
         except TimeoutError:
-            raise TimeoutError(f"Sort select {self.SORT_SELECT} not visible after {timeout}ms")
+            # if products container not visible, fail early
+            raise TimeoutError("Products container not visible before trying to sort")
 
-        # Try selecting by label first (convenient for readability)
-        try:
-            locator.select_option(label=option_text)
-            return
-        except Exception:
-            # fallback: try mapping label to value
-            value = self.SORT_LABEL_TO_VALUE.get(option_text)
-            if value:
+        # find a candidate selector for the sort control
+        sel, locator = self._find_sort_locator(timeout=timeout//2)
+        if not locator:
+            # diagnostic: try to capture any element that contains 'product' and 'sort' in data-test/class
+            diagnostics = []
+            candidates = self.page.locator("[data-test], [class]").all()
+            # to avoid heavy operations, collect a few matches that mention product/sort
+            for el in candidates[:100]:
                 try:
-                    locator.select_option(value=value)
+                    attrs = {}
+                    # get attributes we care about
+                    tag = el.evaluate("e => e.tagName")
+                    dt = el.get_attribute("data-test")
+                    cls = el.get_attribute("class")
+                    txt = (el.text_content() or "").strip()[:200]
+                    if (dt and ("product" in dt or "sort" in dt)) or (cls and ("product" in cls or "sort" in cls)):
+                        diagnostics.append({"tag": tag, "data-test": dt, "class": cls, "text": txt})
+                except Exception:
+                    continue
+            raise Exception(f"Sort control not found. Tried candidates {self.SORT_SELECT_CANDIDATES}. Diagnostics: {diagnostics}")
+
+        # if we found a locator, try to interact
+        # If it's a native <select> element, prefer select_option
+        try:
+            tag = locator.evaluate("e => e.tagName.toLowerCase()")
+        except Exception:
+            tag = None
+
+        if tag == "select":
+            # try select by label first, then by value fallback
+            try:
+                locator.wait_for(state="visible", timeout=timeout)
+                # try label
+                locator.select_option(label=option_text)
+                return
+            except Exception:
+                # fallback to mapped value
+                val = self.SORT_LABEL_TO_VALUE.get(option_text)
+                if val:
+                    try:
+                        locator.select_option(value=val)
+                        return
+                    except Exception as e:
+                        raise Exception(f"Failed to select by value '{val}': {e}") from e
+                else:
+                    raise Exception(f"Could not select label '{option_text}' and no mapped value available")
+        else:
+            # Not a select element: attempt to click the control and then click the option by visible text
+            try:
+                locator.wait_for(state="attached", timeout=timeout//2)
+                locator.click()
+                # options might appear as buttons or divs; try generic visible text click
+                option_loc = self.page.locator(f"text={option_text}")
+                if option_loc.count() > 0:
+                    option_loc.first.click()
                     return
-                except Exception as e2:
-                    raise Exception(f"Failed to select sort option by value='{value}': {e2}") from e2
-            else:
-                raise Exception(f"Could not select sort option: label '{option_text}' not found and no fallback value available")
+                # try value mapping: look for the mapped label or value in option text
+                val = self.SORT_LABEL_TO_VALUE.get(option_text)
+                if val:
+                    # try options that contain the value string
+                    option_loc2 = self.page.locator(f"text={val}")
+                    if option_loc2.count() > 0:
+                        option_loc2.first.click()
+                        return
+                # If we reach here, no option clicked -> diagnostic
+                outer = locator.evaluate("e => e.outerHTML") if locator else "<no-locator>"
+                raise Exception(f"Non-select sort control found (selector={sel}) but option '{option_text}' not clickable. Control HTML: {outer}")
+            except Exception as e:
+                raise Exception(f"Failed interacting with non-select sort control: {e}") from e
