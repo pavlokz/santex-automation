@@ -81,3 +81,22 @@ and modularity.
 | TC 5.1 | Sort Products by Price (Low-High)  | User is logged in.                                                   | 1. On the Products page, select "Price (low to high)" from the dropdown                                                                                                                                                         | Products are displayed in ascending order of price, with the cheapest item first.                                             |
 | TC 6.1 | Logout                             | User is logged in.                                                   | 1. Click the burger menu icon <br>2. Click "Logout"                                                                                                                                                                             | User is redirected to the login page and successfully logged out.                                                             |
 
+
+
+```markdown
+# santex-automation (Playwright + pytest)
+
+Setup local:
+1. python3.10 -m venv .venv
+2. source .venv/bin/activate
+3. pip install -r requirements.txt
+4. playwright install
+5. pytest --browser=chromium
+
+Run in Docker:
+1. docker build -t santex-automation:latest .
+2. docker run --rm -v $(pwd)/reports:/app/reports santex-automation:latest pytest --browser=chromium
+
+CI:
+- GitHub Actions workflow `.github/workflows/ci.yml` runs tests across chromium, firefox, webkit and uploads screenshots and junit reports.
+```
