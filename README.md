@@ -81,22 +81,72 @@ and modularity.
 | TC 5.1 | Sort Products by Price (Low-High)  | User is logged in.                                                   | 1. On the Products page, select "Price (low to high)" from the dropdown                                                                                                                                                         | Products are displayed in ascending order of price, with the cheapest item first.                                             |
 | TC 6.1 | Logout                             | User is logged in.                                                   | 1. Click the burger menu icon <br>2. Click "Logout"                                                                                                                                                                             | User is redirected to the login page and successfully logged out.                                                             |
 
-
-
 ```markdown
 # santex-automation (Playwright + pytest)
 
-Setup local:
+Suite para el desafio UI Automation sobre https://www.saucedemo.com/
+
+Principales decisiones
+- Playwright (Python) + pytest
+- Page Object Model (pages/)
+- Cross-browser: Chromium, Firefox, WebKit
+- Screenshots on failure (reports/screenshots)
+- Dockerfile para ejecución reproducible
+- GitHub Actions matrix para browsers
+- Reporting: JUnit XML artifacts + Allure compatible attachment (if Allure se usa localmente)
+
+Requisitos
+- Python 3.10
+- pip
+- playwright (browsers)
+
+Instalación local
 1. python3.10 -m venv .venv
 2. source .venv/bin/activate
 3. pip install -r requirements.txt
 4. playwright install
-5. pytest --browser=chromium
 
-Run in Docker:
-1. docker build -t santex-automation:latest .
-2. docker run --rm -v $(pwd)/reports:/app/reports santex-automation:latest pytest --browser=chromium
+Ejecutar tests
+- Ejecutar todos los tests en Chromium:
+  pytest --browser=chromium
 
-CI:
-- GitHub Actions workflow `.github/workflows/ci.yml` runs tests across chromium, firefox, webkit and uploads screenshots and junit reports.
+- Ejecutar en Firefox:
+  pytest --browser=firefox
+
+- Ejecutar con viewport y en headed:
+  pytest --browser=chromium --viewport=1366x768 --headed
+
+- Paralelizar (si tienes xdist instalado):
+  pytest -n auto --browser=chromium
+
+Docker
+- Build:
+  docker build -t santex-automation:latest .
+- Run:
+  docker run --rm -v $(pwd)/reports:/app/reports santex-automation:latest pytest --browser=chromium
+
+CI (GitHub Actions)
+- El workflow `.github/workflows/ci.yml` ejecuta la suite en Chromium, Firefox y WebKit y sube screenshots, videos y junit xml como artifacts.
+
+Estructura del proyecto
+- pages/: Page Object Model (LoginPage, ProductsPage, CartPage, CheckoutPage)
+- tests/: pruebas por caso (TC 1..6)
+- utils/: generadores de datos y parametrizaciones
+- conftest.py: fixtures y hooks (captura de screenshots en fallo)
+- Dockerfile, .github/workflows/ci.yml, requirements.txt
+
+Credenciales de test
+- standard_user / secret_sauce (usados en pruebas)
+
+Notas y buenas prácticas implementadas
+- Evité xpaths absolutos, uso ids, data-test y selectores robustos.
+- Separé setup (conftest), acciones (pages) y validaciones (tests).
+- Uso de waits implícitos con wait_for_selector en puntos críticos.
+- Reutilización de métodos en POM para acciones repetidas.
+
+Siguientes pasos
+1. Copiá/pegá estos archivos en el repo y hacé commits a main según el checklist.
+2. Ejecutá `pip install -r requirements.txt` y `playwright install`.
+3. Ejecutá `pytest --browser=chromium` para validar localmente.
+4. Si querés Allure reports, instalá y genera los resultados con `pytest --alluredir=reports/allure-results` y luego `allure serve reports/allure-results`.
 ```
