@@ -84,69 +84,143 @@ and modularity.
 ```markdown
 # santex-automation (Playwright + pytest)
 
-Suite para el desafio UI Automation sobre https://www.saucedemo.com/
+Suite de UI automation para el desafío sobre https://www.saucedemo.com/
 
-Principales decisiones
-- Playwright (Python) + pytest
-- Page Object Model (pages/)
-- Cross-browser: Chromium, Firefox, WebKit
-- Screenshots on failure (reports/screenshots)
-- Dockerfile para ejecución reproducible
-- GitHub Actions matrix para browsers
-- Reporting: JUnit XML artifacts + Allure compatible attachment (if Allure se usa localmente)
+Resumen
+- Stack: Playwright (Python) + pytest
+- Arquitectura: Page Object Model (pages/)
+- Soporta cross-browser: chromium, firefox, webkit
+- Genera capturas en fallos (reports/screenshots) y puede generar Allure results
+- Dockerfile y workflow de GitHub Actions incluidos
 
 Requisitos
-- Python 3.10
+- Python 3.10+ (recomendado 3.10)
 - pip
-- playwright (browsers)
+- Docker (opcional, para ejecutar en contenedor)
+- Playwright (navegadores) — instalar con `playwright install`
 
-Instalación local
-1. python3.10 -m venv .venv
-2. source .venv/bin/activate
-3. pip install -r requirements.txt
-4. playwright install
+Instalación local (rápida)
+1. Crear y activar virtualenv:
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+```
+2. Instalar dependencias:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+3. Instalar navegadores Playwright:
+```bash
+playwright install
+# ó para dependencias del sistema:
+playwright install --with-deps
+```
 
-Ejecutar tests
-- Ejecutar todos los tests en Chromium:
-  pytest --browser=chromium
+Estructura principal del proyecto
+- pages/: Page Objects (base_page.py, login_page.py, products_page.py, cart_page.py, checkout_page.py)
+- tests/: tests por caso (TC 1..6)
+- utils/: data/parametrizaciones
+- conftest.py: fixtures (opciones CLI, screenshot on failure)
+- .github/workflows/ci.yml: workflow de GitHub Actions
+- Dockerfile: imagen para ejecutar tests
 
-- Ejecutar en Firefox:
-  pytest --browser=firefox
+Uso: opciones principales (headless / headed / elección de navegador)
+Las opciones se pasan a pytest mediante flags:
 
-- Ejecutar con viewport y en headed:
-  pytest --browser=chromium --viewport=1366x768 --headed
+- --browser: chromium | firefox | webkit
+- --headed: si está presente, ejecuta en modo headed (muestra la ventana del navegador)
+- --channel: canal para Chromium (ej: chrome, msedge). Funciona sólo con --browser=chromium
+- --viewport: resolución WxH (ej: 1366x768)
+- --base-url: cambiar base url si necesitás
 
-- Paralelizar (si tienes xdist instalado):
-  pytest -n auto --browser=chromium
+Ejemplos
 
-Docker
+- Ejecutar suite en Chromium (headless, por defecto en CI):
+```bash
+pytest -q --browser=chromium
+```
+
+- Ejecutar con navegador visible (headful / headed) — útil para demos:
+```bash
+pytest -q --browser=chromium --headed --viewport=1366x768
+```
+
+- Ejecutar en Firefox y ver la ventana:
+```bash
+pytest -q --browser=firefox --headed --viewport=1366x768
+```
+
+- Ejecutar con Chrome real (si está instalado en el sistema) usando canal:
+```bash
+pytest -q --browser=chromium --channel=chrome --headed --viewport=1366x768
+```
+
+- Ejecutar un test específico (rápido para debug):
+```bash
+pytest tests/test_tc5_sort.py::test_tc_5_1_sort_products_by_price_low_to_high -q --browser=chromium --headed
+```
+
+- Ejecutar la suite en los 3 browsers localmente (secuencial):
+```bash
+for b in chromium firefox webkit; do pytest -q --browser=$b --viewport=1366x768; done
+```
+
+Playwright Inspector / Debugging
+- Para detener en puntos y usar inspector:
+```bash
+PWDEBUG=1 pytest tests/test_tc5_sort.py::test_tc_5_1_sort_products_by_price_low_to_high --browser=chromium
+```
+
+Allure reporting
+1. Generar results desde pytest:
+```bash
+pytest --alluredir=reports/allure-results --browser=chromium
+```
+2. Instalar Allure CLI (macOS via Homebrew):
+```bash
+brew install allure
+```
+3. Servir reporte (temporal):
+```bash
+allure serve reports/allure-results
+```
+4. O generar reporte estático:
+```bash
+allure generate reports/allure-results -o reports/allure-report --clean
+allure open reports/allure-report
+```
+
+Alternativa: usar contenedor para servir Allure sin instalar CLI:
+```bash
+# una vez que reports/allure-results está poblado
+docker run --rm -d -p 5050:5050 -v "$(pwd)/reports/allure-results":/app/allure-results --name allure-serv frankescobar/allure-docker-service
+# abrir http://localhost:5050
+```
+
+Ejecutar tests dentro de Docker
 - Build:
-  docker build -t santex-automation:latest .
-- Run:
-  docker run --rm -v $(pwd)/reports:/app/reports santex-automation:latest pytest --browser=chromium
+```bash
+docker build -t santex-automation:latest .
+```
+- Ejecutar tests y persistir reports en host:
+```bash
+mkdir -p reports/allure-results reports/screenshots reports/videos
+docker run --rm -v "$(pwd)/reports":/app/reports santex-automation:latest pytest --alluredir=reports/allure-results --browser=chromium
+```
+- NOTA: ver la ventana del navegador desde Docker en macOS es complejo (requiere VNC / X11). Para demos en vivo ejecutá localmente con --headed.
+
+Capturas y videos
+- El hook en `conftest.py` captura screenshots en fallo y los guarda en `reports/screenshots/`.
+- Si ejecutás en modo no-headed (headless) y el contexto se creó con `record_video_dir`, Playwright grabará videos en `reports/videos/`.
 
 CI (GitHub Actions)
-- El workflow `.github/workflows/ci.yml` ejecuta la suite en Chromium, Firefox y WebKit y sube screenshots, videos y junit xml como artifacts.
+- El workflow .github/workflows/ci.yml ejecuta la suite como matriz cross-browser (chromium, firefox, webkit), instala dependencias y sube artifacts (screenshots, videos, junit xml). Puedes añadir subida de `reports/allure-results` si querés descargar los resultados y verlos localmente con Allure CLI.
 
-Estructura del proyecto
-- pages/: Page Object Model (LoginPage, ProductsPage, CartPage, CheckoutPage)
-- tests/: pruebas por caso (TC 1..6)
-- utils/: generadores de datos y parametrizaciones
-- conftest.py: fixtures y hooks (captura de screenshots en fallo)
-- Dockerfile, .github/workflows/ci.yml, requirements.txt
-
-Credenciales de test
-- standard_user / secret_sauce (usados en pruebas)
-
-Notas y buenas prácticas implementadas
-- Evité xpaths absolutos, uso ids, data-test y selectores robustos.
-- Separé setup (conftest), acciones (pages) y validaciones (tests).
-- Uso de waits implícitos con wait_for_selector en puntos críticos.
-- Reutilización de métodos en POM para acciones repetidas.
-
-Siguientes pasos
-1. Copiá/pegá estos archivos en el repo y hacé commits a main según el checklist.
-2. Ejecutá `pip install -r requirements.txt` y `playwright install`.
-3. Ejecutá `pytest --browser=chromium` para validar localmente.
-4. Si querés Allure reports, instalá y genera los resultados con `pytest --alluredir=reports/allure-results` y luego `allure serve reports/allure-results`.
+Buenas prácticas incluidas
+- Page Object Model para centralizar locators y acciones.
+- Evitamos xpaths frágiles: se usan ids y data-test cuando están disponibles.
+- Separación entre setup (conftest.py), acciones (pages/) y validaciones (tests/).
+- Reutilización de métodos y fixtures.
+- Parametrización de datos de prueba en utils/data.py
 ```
